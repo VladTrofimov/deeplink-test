@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Twitter DeepLink Auto Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{display:flex;flex-direction:column;justify-content:center;align-items:center;
+         height:100vh;font-family:Arial, sans-serif;text-align:center;padding:16px}
+    code{background:#f4f4f4;padding:2px 6px;border-radius:4px}
+  </style>
+  <script>
+    // helper: читаем параметры URL
+    function getParam(name, def) {
+      const u = new URL(window.location.href);
+      return u.searchParams.get(name) ?? def;
+    }
+
+    function openDeepLinkAuto() {
+      // настраиваемые параметры
+      const user     = getParam('user', 'elonmusk');  // ?user=durov
+      const delayMs  = parseInt(getParam('delay', '1000'), 10); // ?delay=1500
+      const fallback = getParam('fallback', 'https://play.google.com/store/apps/details?id=com.twitter.android');
+
+      // диплинк в Twitter-приложение
+      const deeplink = `twitter://user?screen_name=${encodeURIComponent(user)}`;
+
+      // создаём невидимый iframe — безопаснее для истории браузера
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+
+      let fallbackTimer = null;
+      let navigatedAway = false;
+
+      // если страница скрылась (ушли в приложение) — отменяем фолбэк
+      function cancelIfHidden() {
+        if (document.visibilityState === 'hidden' || document.hidden) {
+          navigatedAway = true;
+          if (fallbackTimer) clearTimeout(fallbackTimer);
+        }
+      }
+      document.addEventListener('visibilitychange', cancelIfHidden);
+      window.addEventListener('pagehide', cancelIfHidden);
+
+      // запускаем таймер фолбэка
+      fallbackTimer = setTimeout(() => {
+        if (!navigatedAway) {
+          window.location.replace(fallback);
+        }
+      }, isNaN(delayMs) ? 1000 : Math.max(300, delayMs)); // минимум 300 мс
+
+      // пробуем открыть диплинк
+      try {
+        // вариант через iframe часто надёжнее в WebView
+        iframe.src = deeplink;
+        // дубль через window.location на случай блокировок iframe
+        setTimeout(() => { if (!navigatedAway) window.location.href = deeplink; }, 50);
+      } catch (e) {
+        // на всякий — сразу фолбэк
+        if (fallbackTimer) clearTimeout(fallbackTimer);
+        window.location.replace(fallback);
+      }
+
+      // показываем параметры на странице для наглядности
+      document.getElementById('current').textContent =
+        `deeplink: ${deeplink} | fallback: ${fallback} | delay: ${isNaN(delayMs)?1000:delayMs}ms`;
+    }
+
+    document.addEventListener('DOMContentLoaded', openDeepLinkAuto);
+  </script>
+</head>
+<body>
+  <h1>Twitter DeepLink Auto</h1>
+  <p>Страница автоматически пытается открыть Twitter-приложение. Если не удаётся за ~1 cек., произойдёт переход в Google Play.</p>
+  <p><small id="current"><em>инициализация…</em></small></p>
+
+  <h3>Как настраивать:</h3>
+  <p>
+    Меняй параметры в URL:<br/>
+    <code>?user=elonmusk</code> — чей профиль открыть<br/>
+    <code>&delay=1500</code> — время ожидания в мс<br/>
+    <code>&fallback=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.twitter.android</code> — куда падать
+  </p>
+</body>
+</html>
