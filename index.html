@@ -36,23 +36,18 @@
         if (document.hidden || document.visibilityState === 'hidden') cancel();
       });
       window.addEventListener('pagehide', cancel);
-
-      // 1) Пробуем intent:// — Chrome сам обработает fallback, если приложения нет
       try {
         location.replace(intentUrl);
       } catch (_) {}
 
-      // 2) Подстраховка: если intent:// заблокировали, пробуем twitter:// и ставим таймер на Store
       timer = setTimeout(() => {
         if (!navigatedAway) location.replace(fallback);
       }, delayMs);
 
-      // через небольшой интервал пробуем схему
       setTimeout(() => {
         if (!navigatedAway) location.href = schemeUrl;
       }, 80);
 
-      // выводим текущее состояние на страницу (для дебага)
       document.getElementById('info').textContent =
         `intent: ${intentUrl}\nbackup scheme: ${schemeUrl}\nfallback: ${fallback}\ndelay: ${delayMs}ms`;
     }
