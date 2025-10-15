@@ -9,74 +9,78 @@
     code{background:#f4f4f4;padding:2px 6px;border-radius:4px}
   </style>
   <script>
-    function getParam(name, def) {
-      const u = new URL(location.href);
-      return u.searchParams.get(name) ?? def;
-    }
+  function getParam(name, def) {
+    const u = new URL(location.href);
+    return u.searchParams.get(name) ?? def;
+  }
 
-    function buildFallback(rawFallback, id) {
-      try {
-        const u = new URL(rawFallback);
-        if (u.searchParams.has('referrer')) {
-          const ref = u.searchParams.get('referrer').replace('%{id}', id);
-          u.searchParams.set('referrer', ref);
-        }
-        return u.toString();
-      } catch {
-        // Если это невалидный URL — делаем простую подстановку
-        return (rawFallback || '').replace('%{id}', id);
+  function buildFallback(rawFallback, id) {
+    try {
+      const u = new URL(rawFallback);
+      if (u.searchParams.has('referrer')) {
+        const ref = u.searchParams.get('referrer').replace('%{id}', id);
+        u.searchParams.set('referrer', ref);
       }
+      return u.toString();
+    } catch {
+      return (rawFallback || '').replace('%{id}', id);
     }
+  }
 
-    function tryOpen() {
-      const defaultDeeplink = 'dhgate://virtual?des=channellp1&itemcode=1069377901&d1code=bm%7CBigabid%7C';
-      const defaultFallback = 'https://play.google.com/store/apps/details?id=com.dhgate.buyermob&referrer=bigabid_%{id}';
+  function tryOpen() {
+    // Если передан deeplink — работаем в универсальном режиме
+    const deeplinkParam = getParam('deeplink', null);
+    const delayMs  = Math.max(300, parseInt(getParam('delay','1000'),10) || 1000);
+    const id       = getParam('id', 'test123');
+    let fallback   = getParam('fallback', '');
 
-      const deeplinkParam = getParam('deeplink', encodeURIComponent(defaultDeeplink));
+    let schemeUrl, intentUrl, info;
+
+    if (deeplinkParam) {
       const deeplink = decodeURIComponent(deeplinkParam);
+      const scheme   = deeplink.split(':')[0]; // dhgate, twitter и т.п.
+      fallback = buildFallback(fallback, id);
 
-      const id       = getParam('id', 'test123');
-      const delayMs  = Math.max(300, parseInt(getParam('delay', '1000'), 10) || 1000);
-      const fallback = buildFallback(getParam('fallback', defaultFallback), id);
+      intentUrl =
+        `intent://${deeplink.replace(/^.*?:\/\//,'')}` +
+        `#Intent;scheme=${encodeURIComponent(scheme)};` +
+        `package=${scheme==='dhgate'?'com.dhgate.buyermob':'com.twitter.android'};` +
+        (fallback ? `S.browser_fallback_url=${encodeURIComponent(fallback)};` : '') +
+        `end`;
 
-      const intentUrl =
-        `intent://${deeplink.replace(/^.*?:\/\//, '')}` + 
-        `#Intent;scheme=dhgate;package=com.dhgate.buyermob;` +
-        `S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+      schemeUrl = deeplink;
+      info = { mode:'deeplink', deeplink, intentUrl, schemeUrl, fallback, delayMs, id };
+    } else {
+      // Старый режим: Twitter by user
+      const user = getParam('user','elonmusk');
+      fallback = getParam('fallback','https://play.google.com/store/apps/details?id=com.twitter.android');
+      const tWeb = `https://twitter.com/`+user;
 
-      const schemeUrl = deeplink; 
-
-      let navigatedAway = false;
-      let timer = null;
-
-      const cancel = () => {
-        if (!navigatedAway) {
-          navigatedAway = true;
-          if (timer) clearTimeout(timer);
-        }
-      };
-
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden || document.visibilityState === 'hidden') cancel();
-      });
-      window.addEventListener('pagehide', cancel);
-
-      try { location.replace(intentUrl); } catch (_) {}
-
-      setTimeout(() => {
-        if (!navigatedAway) location.href = schemeUrl;
-      }, 80);
-
-      timer = setTimeout(() => {
-        if (!navigatedAway) location.replace(fallback);
-      }, delayMs);
-
-      document.getElementById('info').textContent =
-        `deeplink: ${deeplink}\nintent: ${intentUrl}\nbackup scheme: ${schemeUrl}\nfallback: ${fallback}\ndelay: ${delayMs}ms\nid: ${id}`;
+      intentUrl = `intent://user?screen_name=${encodeURIComponent(user)}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(tWeb)};end`;
+      schemeUrl = `twitter://user?screen_name=${encodeURIComponent(user)}`;
+      info = { mode:'twitter', user, intentUrl, schemeUrl, fallback, delayMs };
     }
 
-    document.addEventListener('DOMContentLoaded', tryOpen);
-  </script>
+    let navigatedAway = false;
+    let timer = null;
+    const cancel = () => { if (!navigatedAway){ navigatedAway = true; if (timer) clearTimeout(timer); }};
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || document.visibilityState === 'hidden') cancel();
+    });
+    window.addEventListener('pagehide', cancel);
+
+    try { location.replace(intentUrl); } catch {}
+    setTimeout(() => { if (!navigatedAway) location.href = schemeUrl; }, 80);
+    timer = setTimeout(() => { if (!navigatedAway && fallback) location.replace(fallback); }, delayMs);
+
+    const pre = document.getElementById('info');
+    if (pre) pre.textContent =
+      Object.entries(info).map(([k,v])=>`${k}: ${v}`).join('\n');
+  }
+  document.addEventListener('DOMContentLoaded', tryOpen);
+</script>
+
 </head>
 <body>
   <h1>DHgate DeepLink Auto</h1>
