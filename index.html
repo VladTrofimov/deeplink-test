@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Twitter DeepLink Auto Test</title>
+  <title>DHgate DeepLink Auto Test</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;font-family:Arial,sans-serif;text-align:center;padding:16px}
@@ -14,13 +14,37 @@
       return u.searchParams.get(name) ?? def;
     }
 
-    function tryOpen() {
-      const user     = getParam('user',  'elonmusk');
-      const delayMs  = Math.max(300, parseInt(getParam('delay','1000'),10) || 1000);
-      const fallback = getParam('fallback','https://play.google.com/store/apps/details?id=com.twitter.android');
+    function buildFallback(rawFallback, id) {
+      try {
+        const u = new URL(rawFallback);
+        if (u.searchParams.has('referrer')) {
+          const ref = u.searchParams.get('referrer').replace('%{id}', id);
+          u.searchParams.set('referrer', ref);
+        }
+        return u.toString();
+      } catch {
+        // Если это невалидный URL — делаем простую подстановку
+        return (rawFallback || '').replace('%{id}', id);
+      }
+    }
 
-      const intentUrl  = `intent://user?screen_name=${encodeURIComponent(user)}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent('https://twitter.com/'+user)};end`;
-      const schemeUrl  = `twitter://user?screen_name=${encodeURIComponent(user)}`;
+    function tryOpen() {
+      const defaultDeeplink = 'dhgate://virtual?des=channellp1&itemcode=1069377901&d1code=bm%7CBigabid%7C';
+      const defaultFallback = 'https://play.google.com/store/apps/details?id=com.dhgate.buyermob&referrer=bigabid_%{id}';
+
+      const deeplinkParam = getParam('deeplink', encodeURIComponent(defaultDeeplink));
+      const deeplink = decodeURIComponent(deeplinkParam);
+
+      const id       = getParam('id', 'test123');
+      const delayMs  = Math.max(300, parseInt(getParam('delay', '1000'), 10) || 1000);
+      const fallback = buildFallback(getParam('fallback', defaultFallback), id);
+
+      const intentUrl =
+        `intent://${deeplink.replace(/^.*?:\/\//, '')}` + 
+        `#Intent;scheme=dhgate;package=com.dhgate.buyermob;` +
+        `S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+
+      const schemeUrl = deeplink; 
 
       let navigatedAway = false;
       let timer = null;
@@ -36,27 +60,26 @@
         if (document.hidden || document.visibilityState === 'hidden') cancel();
       });
       window.addEventListener('pagehide', cancel);
-      try {
-        location.replace(intentUrl);
-      } catch (_) {}
 
-      timer = setTimeout(() => {
-        if (!navigatedAway) location.replace(fallback);
-      }, delayMs);
+      try { location.replace(intentUrl); } catch (_) {}
 
       setTimeout(() => {
         if (!navigatedAway) location.href = schemeUrl;
       }, 80);
 
+      timer = setTimeout(() => {
+        if (!navigatedAway) location.replace(fallback);
+      }, delayMs);
+
       document.getElementById('info').textContent =
-        `intent: ${intentUrl}\nbackup scheme: ${schemeUrl}\nfallback: ${fallback}\ndelay: ${delayMs}ms`;
+        `deeplink: ${deeplink}\nintent: ${intentUrl}\nbackup scheme: ${schemeUrl}\nfallback: ${fallback}\ndelay: ${delayMs}ms\nid: ${id}`;
     }
 
     document.addEventListener('DOMContentLoaded', tryOpen);
   </script>
 </head>
 <body>
-  <h1>Twitter DeepLink Auto</h1>
+  <h1>DHgate DeepLink Auto</h1>
   <pre id="info">init…</pre>
 </body>
 </html>
