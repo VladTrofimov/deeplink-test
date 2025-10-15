@@ -1,109 +1,114 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <title>DHgate DeepLink Auto Test</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;font-family:Arial,sans-serif;text-align:center;padding:16px}
-    code{background:#f4f4f4;padding:2px 6px;border-radius:4px}
-  </style>
- <script>
-  function isAndroidWebView() {
-    const ua = navigator.userAgent || '';
-    const isAndroid = /Android/i.test(ua);
-    // Признаки WebView: wv; или отсутствие 'Chrome/' при наличии 'Version/'
-    const isWV = /\bwv\b|Version\/\d+\.\d+ (?!.*Chrome\/)/i.test(ua) ||
-                 /\bFBAV\b|\bFBAN\b|\bLine\b|\bInstagram\b/i.test(ua); // популярные in-app
-    return isAndroid && isWV;
-  }
-
-  // ... getParam / buildFallback — как у тебя ...
-
-  function tryOpen() {
-    const deeplinkParam = getParam('deeplink', null);
-    const delayMs  = Math.max(500, parseInt(getParam('delay','1500'),10) || 1500); // ↑ немного больше
-    const id       = getParam('id', 'test123');
-    let   fallback = getParam('fallback', '');
-
-    let schemeUrl, intentUrl, info;
-
-    if (deeplinkParam) {
-      const deeplink = decodeURIComponent(deeplinkParam);
-      const m = deeplink.match(/^([a-z][a-z0-9+.-]*):/i);
-      const scheme = m ? m[1].toLowerCase() : '';
-      const isWV = isAndroidWebView();
-
-      // DHgate — авто-fallback, если не задан
-      if (!fallback && scheme === 'dhgate') {
-        fallback = 'https://play.google.com/store/apps/details?id=com.dhgate.buyermob&referrer=bigabid_%{id}';
-      }
-      fallback = buildFallback(fallback, id);
-
-      const pkg = (scheme === 'dhgate') ? 'com.dhgate.buyermob' : '';
-
-      const pathAfterScheme = deeplink.replace(/^.*?:\/\//,'');
-      // ДВА варианта intent: без fallback для WebView, с fallback — для обычных браузеров
-      const intentBase =
-        `intent://${pathAfterScheme}#Intent;scheme=${encodeURIComponent(scheme)};` +
-        (pkg ? `package=${pkg};` : '');
-
-      intentUrl = isWV
-        ? (intentBase + 'end') // без S.browser_fallback_url в WebView
-        : (intentBase + (fallback ? `S.browser_fallback_url=${encodeURIComponent(fallback)};` : '') + 'end');
-
-      schemeUrl = deeplink;
-      info = { mode:'deeplink', scheme, pkg: pkg || '(none)', isWV, deeplink, intentUrl, schemeUrl, fallback, delayMs, id };
-    } else {
-      // Твиттер-режим оставь как есть...
-    }
-
-    let navigatedAway = false;
-    let timer = null;
-    const cancel = () => { if (!navigatedAway){ navigatedAway = true; if (timer) clearTimeout(timer); }};
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden || document.visibilityState === 'hidden') cancel();
-    });
-    window.addEventListener('pagehide', cancel);
-    window.addEventListener('blur', cancel); // НОВОЕ: помогает в WebView
-
-    // === НОВЫЙ ПОРЯДОК ДЛЯ WEBVIEW ===
-    const isWV = typeof info === 'object' && info.isWV;
-
-    if (isWV) {
-      // 1) Сначала пробуем схему (часто WebView пропускает)
-      setTimeout(() => { if (!navigatedAway) location.href = schemeUrl; }, 0);
-      // 2) Затем — intent БЕЗ browser_fallback_url
-      setTimeout(() => { if (!navigatedAway) location.href = intentUrl; }, 80);
-    } else {
-      // Обычные браузеры — как раньше: intent → схема
-      try { location.replace(intentUrl); } catch {}
-      setTimeout(() => { if (!navigatedAway) location.href = schemeUrl; }, 80);
-    }
-
-    // 3) Резерв: ведём в Play (market:// быстрее открывает приложение, чем https)
-    const market = 'market://details?id=com.dhgate.buyermob';
-    timer = setTimeout(() => {
-      if (!navigatedAway) {
-        // Сначала попытка через market:// (если поддерживается)
-        try { location.href = market; } catch { /* ignore */ }
-        // И финально — на https fallback (на случай отсутствия Play или отказа)
-        setTimeout(() => { if (!navigatedAway && fallback) location.replace(fallback); }, 600);
-      }
-    }, delayMs);
-
-    const pre = document.getElementById('info');
-    if (pre) pre.textContent = Object.entries(info).map(([k,v])=>`${k}: ${v}`).join('\n');
-  }
-
-  document.addEventListener('DOMContentLoaded', tryOpen);
-</script>
-
-
-</head>
 <body>
   <h1>DHgate DeepLink Auto</h1>
   <pre id="info">init…</pre>
+
+  <!-- Режим ручного клика (по умолчанию скрыт) -->
+  <div id="manual" style="display:none; margin-top:16px">
+    <p>Похоже, ваш просмотрщик блокирует авто-переход. Нажмите кнопку:</p>
+    <p style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center">
+      <a id="btnScheme"  href="#" style="padding:10px 14px; border:1px solid #ccc; border-radius:10px; text-decoration:none">Открыть в приложении</a>
+      <a id="btnIntent"  href="#" style="padding:10px 14px; border:1px solid #ccc; border-radius:10px; text-decoration:none">Открыть через Intent</a>
+      <a id="btnMarket"  href="#" style="padding:10px 14px; border:1px solid #ccc; border-radius:10px; text-decoration:none">Открыть в Play</a>
+    </p>
+  </div>
+
+  <script>
+    // === ваш текущий код getParam / buildFallback оставьте как есть ===
+
+    function isInIframe() {
+      try { return window.self !== window.top; } catch { return true; }
+    }
+    function isAndroidWebView() {
+      const ua = navigator.userAgent || '';
+      const isAndroid = /Android/i.test(ua);
+      const isWV = /\bwv\b/i.test(ua) || /\bVersion\/\d+\.\d+ (?!.*Chrome\/)/i.test(ua)
+                   || /\bFBAV\b|\bFBAN\b|\bInstagram\b|\bLine\b/i.test(ua);
+      return isAndroid && isWV;
+    }
+
+    function tryOpen() {
+      const deeplinkParam = getParam('deeplink', null);
+      const delayMs  = Math.max(500, parseInt(getParam('delay','1500'),10) || 1500);
+      const id       = getParam('id', 'test123');
+      let   fallback = getParam('fallback', '');
+
+      let schemeUrl, intentUrl, info;
+
+      if (deeplinkParam) {
+        const deeplink = decodeURIComponent(deeplinkParam);
+        const m = deeplink.match(/^([a-z][a-z0-9+.-]*):/i);
+        const scheme = m ? m[1].toLowerCase() : '';
+        const WV = isAndroidWebView();
+
+        if (!fallback && scheme === 'dhgate') {
+          fallback = 'https://play.google.com/store/apps/details?id=com.dhgate.buyermob&referrer=bigabid_%{id}';
+        }
+        fallback = buildFallback(fallback, id);
+
+        const pkg = (scheme === 'dhgate') ? 'com.dhgate.buyermob' : '';
+        const after = deeplink.replace(/^.*?:\/\//,'');
+        const baseIntent = `intent://${after}#Intent;scheme=${encodeURIComponent(scheme)};${pkg?`package=${pkg};`:''}`;
+        intentUrl = WV ? (baseIntent + 'end')
+                       : (baseIntent + (fallback?`S.browser_fallback_url=${encodeURIComponent(fallback)};`:'') + 'end');
+
+        schemeUrl = deeplink;
+        info = { scheme, pkg: pkg||'(none)', WV, iframe:isInIframe(), deeplink, intentUrl, schemeUrl, fallback, delayMs, id };
+      } else {
+        // ваш Twitter-режим как был
+        const user = getParam('user','elonmusk');
+        fallback = getParam('fallback','https://play.google.com/store/apps/details?id=com.twitter.android');
+        const tWeb = `https://twitter.com/`+user;
+        intentUrl = `intent://user?screen_name=${encodeURIComponent(user)}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(tWeb)};end`;
+        schemeUrl = `twitter://user?screen_name=${encodeURIComponent(user)}`;
+        info = { mode:'twitter', user, intentUrl, schemeUrl, fallback, delayMs };
+      }
+
+      let navigatedAway = false;
+      let timer = null;
+      const cancel = () => { if (!navigatedAway){ navigatedAway = true; if (timer) clearTimeout(timer); }};
+
+      document.addEventListener('visibilitychange', () => { if (document.hidden) cancel(); });
+      window.addEventListener('pagehide', cancel);
+      window.addEventListener('blur', cancel); // помогает в WebView
+
+      const market = 'market://details?id=com.dhgate.buyermob';
+
+      const showManual = () => {
+        const man = document.getElementById('manual');
+        if (man && man.style.display !== 'block') {
+          man.style.display = 'block';
+          // Привязываем ссылки к кнопкам
+          document.getElementById('btnScheme').setAttribute('href', schemeUrl);
+          document.getElementById('btnIntent').setAttribute('href', intentUrl);
+          document.getElementById('btnMarket').setAttribute('href', market);
+        }
+      };
+
+      // Попытки авто-открытия
+      const WV = info && info.WV;
+      if (WV || isInIframe()) {
+        // В строгих средах пробуем сначала схему, затем intent без browser_fallback
+        setTimeout(()=>{ if (!navigatedAway) location.href = schemeUrl; }, 0);
+        setTimeout(()=>{ if (!navigatedAway) location.href = intentUrl; }, 100);
+      } else {
+        try { location.replace(intentUrl); } catch {}
+        setTimeout(()=>{ if (!navigatedAway) location.href = schemeUrl; }, 80);
+      }
+
+      // Таймер: market -> https fallback
+      timer = setTimeout(() => {
+        if (!navigatedAway) {
+          try { location.href = market; } catch {}
+          setTimeout(()=>{ if (!navigatedAway && fallback) location.replace(fallback); }, 600);
+        }
+      }, delayMs);
+
+      // Если за 2 секунды никуда не ушли — показываем кнопки (требуется клик)
+      setTimeout(() => { if (!navigatedAway) showManual(); }, 2000);
+
+      const pre = document.getElementById('info');
+      if (pre) pre.textContent = Object.entries(info).map(([k,v])=>`${k}: ${v}`).join('\n');
+    }
+    document.addEventListener('DOMContentLoaded', tryOpen);
+  </script>
 </body>
-</html>
