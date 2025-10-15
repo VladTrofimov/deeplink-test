@@ -12,103 +12,94 @@
     </p>
   </div>
 
-  <script>
-    // === ваш текущий код getParam / buildFallback оставьте как есть ===
+ <script>
+  function getParam(name, def) {
+    const u = new URL(location.href);
+    return u.searchParams.get(name) ?? def;
+  }
 
-    function isInIframe() {
-      try { return window.self !== window.top; } catch { return true; }
-    }
-    function isAndroidWebView() {
-      const ua = navigator.userAgent || '';
-      const isAndroid = /Android/i.test(ua);
-      const isWV = /\bwv\b/i.test(ua) || /\bVersion\/\d+\.\d+ (?!.*Chrome\/)/i.test(ua)
-                   || /\bFBAV\b|\bFBAN\b|\bInstagram\b|\bLine\b/i.test(ua);
-      return isAndroid && isWV;
-    }
-
-    function tryOpen() {
-      const deeplinkParam = getParam('deeplink', null);
-      const delayMs  = Math.max(500, parseInt(getParam('delay','1500'),10) || 1500);
-      const id       = getParam('id', 'test123');
-      let   fallback = getParam('fallback', '');
-
-      let schemeUrl, intentUrl, info;
-
-      if (deeplinkParam) {
-        const deeplink = decodeURIComponent(deeplinkParam);
-        const m = deeplink.match(/^([a-z][a-z0-9+.-]*):/i);
-        const scheme = m ? m[1].toLowerCase() : '';
-        const WV = isAndroidWebView();
-
-        if (!fallback && scheme === 'dhgate') {
-          fallback = 'https://play.google.com/store/apps/details?id=com.dhgate.buyermob&referrer=bigabid_%{id}';
-        }
-        fallback = buildFallback(fallback, id);
-
-        const pkg = (scheme === 'dhgate') ? 'com.dhgate.buyermob' : '';
-        const after = deeplink.replace(/^.*?:\/\//,'');
-        const baseIntent = `intent://${after}#Intent;scheme=${encodeURIComponent(scheme)};${pkg?`package=${pkg};`:''}`;
-        intentUrl = WV ? (baseIntent + 'end')
-                       : (baseIntent + (fallback?`S.browser_fallback_url=${encodeURIComponent(fallback)};`:'') + 'end');
-
-        schemeUrl = deeplink;
-        info = { scheme, pkg: pkg||'(none)', WV, iframe:isInIframe(), deeplink, intentUrl, schemeUrl, fallback, delayMs, id };
-      } else {
-        // ваш Twitter-режим как был
-        const user = getParam('user','elonmusk');
-        fallback = getParam('fallback','https://play.google.com/store/apps/details?id=com.twitter.android');
-        const tWeb = `https://twitter.com/`+user;
-        intentUrl = `intent://user?screen_name=${encodeURIComponent(user)}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(tWeb)};end`;
-        schemeUrl = `twitter://user?screen_name=${encodeURIComponent(user)}`;
-        info = { mode:'twitter', user, intentUrl, schemeUrl, fallback, delayMs };
+  function buildFallback(rawFallback, id) {
+    try {
+      const u = new URL(rawFallback);
+      if (u.searchParams.has('referrer')) {
+        const ref = u.searchParams.get('referrer').replace('%{id}', id);
+        u.searchParams.set('referrer', ref);
       }
-
-      let navigatedAway = false;
-      let timer = null;
-      const cancel = () => { if (!navigatedAway){ navigatedAway = true; if (timer) clearTimeout(timer); }};
-
-      document.addEventListener('visibilitychange', () => { if (document.hidden) cancel(); });
-      window.addEventListener('pagehide', cancel);
-      window.addEventListener('blur', cancel); // помогает в WebView
-
-      const market = 'market://details?id=com.dhgate.buyermob';
-
-      const showManual = () => {
-        const man = document.getElementById('manual');
-        if (man && man.style.display !== 'block') {
-          man.style.display = 'block';
-          // Привязываем ссылки к кнопкам
-          document.getElementById('btnScheme').setAttribute('href', schemeUrl);
-          document.getElementById('btnIntent').setAttribute('href', intentUrl);
-          document.getElementById('btnMarket').setAttribute('href', market);
-        }
-      };
-
-      // Попытки авто-открытия
-      const WV = info && info.WV;
-      if (WV || isInIframe()) {
-        // В строгих средах пробуем сначала схему, затем intent без browser_fallback
-        setTimeout(()=>{ if (!navigatedAway) location.href = schemeUrl; }, 0);
-        setTimeout(()=>{ if (!navigatedAway) location.href = intentUrl; }, 100);
-      } else {
-        try { location.replace(intentUrl); } catch {}
-        setTimeout(()=>{ if (!navigatedAway) location.href = schemeUrl; }, 80);
-      }
-
-      // Таймер: market -> https fallback
-      timer = setTimeout(() => {
-        if (!navigatedAway) {
-          try { location.href = market; } catch {}
-          setTimeout(()=>{ if (!navigatedAway && fallback) location.replace(fallback); }, 600);
-        }
-      }, delayMs);
-
-      // Если за 2 секунды никуда не ушли — показываем кнопки (требуется клик)
-      setTimeout(() => { if (!navigatedAway) showManual(); }, 2000);
-
-      const pre = document.getElementById('info');
-      if (pre) pre.textContent = Object.entries(info).map(([k,v])=>`${k}: ${v}`).join('\n');
+      return u.toString();
+    } catch {
+      return (rawFallback || '').replace('%{id}', id);
     }
-    document.addEventListener('DOMContentLoaded', tryOpen);
-  </script>
+  }
+
+  function tryOpen() {
+    const deeplinkParam = getParam('deeplink', null);
+    const delayMs  = Math.max(300, parseInt(getParam('delay','1000'),10) || 1000);
+    const id       = getParam('id', 'test123');
+
+    let fallback   = getParam('fallback', '');
+    const pkgParam = getParam('package', null); // НОВОЕ: возможность задать package вручную
+
+    let schemeUrl, intentUrl, info;
+
+    if (deeplinkParam) {
+      const deeplink = decodeURIComponent(deeplinkParam);
+
+      // Надёжно извлекаем схему
+      const m = deeplink.match(/^([a-z][a-z0-9+.-]*):/i);
+      const scheme = m ? m[1].toLowerCase() : '';
+
+      // Если fallback не задан, а схема dhgate — подставим Play по умолчанию
+      if (!fallback && scheme === 'dhgate') {
+        fallback = 'https://play.google.com/store/apps/details?id=com.dhgate.buyermob&referrer=bigabid_%{id}';
+      }
+      fallback = buildFallback(fallback, id);
+
+      // package: из query → по умолчанию dhgate → иначе пусто
+      const pkg =
+        pkgParam
+        || (scheme === 'dhgate' ? 'com.dhgate.buyermob' : '');
+
+      // intent://host/path?query#Intent;scheme=...;package=...;S.browser_fallback_url=...;end
+      const pathAfterScheme = deeplink.replace(/^.*?:\/\//,''); // всё после "scheme://"
+      intentUrl =
+        `intent://${pathAfterScheme}` +
+        `#Intent;scheme=${encodeURIComponent(scheme)};` +
+        (pkg ? `package=${pkg};` : '') +
+        (fallback ? `S.browser_fallback_url=${encodeURIComponent(fallback)};` : '') +
+        `end`;
+
+      schemeUrl = deeplink;
+      info = { mode:'deeplink', scheme, pkg: pkg || '(none)', deeplink, intentUrl, schemeUrl, fallback, delayMs, id };
+    } else {
+      // Старый режим: Twitter по user
+      const user = getParam('user','elonmusk');
+      fallback = getParam('fallback','https://play.google.com/store/apps/details?id=com.twitter.android');
+      const tWeb = `https://twitter.com/`+user;
+
+      intentUrl = `intent://user?screen_name=${encodeURIComponent(user)}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(tWeb)};end`;
+      schemeUrl = `twitter://user?screen_name=${encodeURIComponent(user)}`;
+      info = { mode:'twitter', user, intentUrl, schemeUrl, fallback, delayMs };
+    }
+
+    let navigatedAway = false;
+    let timer = null;
+    const cancel = () => { if (!navigatedAway){ navigatedAway = true; if (timer) clearTimeout(timer); }};
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || document.visibilityState === 'hidden') cancel();
+    });
+    window.addEventListener('pagehide', cancel);
+
+    try { location.replace(intentUrl); } catch {}
+    setTimeout(() => { if (!navigatedAway) location.href = schemeUrl; }, 80);
+    timer = setTimeout(() => { if (!navigatedAway && fallback) location.replace(fallback); }, delayMs);
+
+    const pre = document.getElementById('info');
+    if (pre) pre.textContent =
+      Object.entries(info).map(([k,v])=>`${k}: ${v}`).join('\n');
+  }
+
+  document.addEventListener('DOMContentLoaded', tryOpen);
+</script>
+
 </body>
