@@ -63,6 +63,7 @@
         const deeplink = decodeURIComponent(deeplinkParam);
         const m = deeplink.match(/^([a-z][a-z0-9+.-]*):/i);
         const scheme = m ? m[1].toLowerCase() : '';
+        const isHttpScheme = scheme === 'http' || scheme === 'https';
         const WVorIframe = isAndroidWebView() || isInIframe();
 
         // дефолтный fallback для dhgate, если не задан
@@ -85,15 +86,16 @@
 
         schemeUrl = deeplink;
         marketUrl = pkg ? `market://details?id=${pkg}` : '';
-        info = { mode:'deeplink', scheme, pkg: pkg||'(none)', WVorIframe, deeplink, intentUrl, schemeUrl, fallback, marketUrl, delayMs, id };
+        info = { mode:'deeplink', scheme, pkg: pkg||'(none)', WVorIframe, isHttpScheme, deeplink, intentUrl, schemeUrl, fallback, marketUrl, delayMs, id };
 
-        runOpenFlow({ schemeUrl, intentUrl, intentNoBFU, fallback, marketUrl, delayMs, info, WVorIframe });
+        runOpenFlow({ schemeUrl, intentUrl, intentNoBFU, fallback, marketUrl, delayMs, info, WVorIframe, isHttpScheme });
       } else {
         // Совместимость: старый режим для Twitter по ?user=
         const user = getParam('user','elonmusk');
         fallback = getParam('fallback','https://play.google.com/store/apps/details?id=com.twitter.android');
         const tWeb = `https://twitter.com/`+user;
         schemeUrl = `twitter://user?screen_name=${encodeURIComponent(user)}`;
+        const isHttpScheme = false;
         const after = `user?screen_name=${encodeURIComponent(user)}`;
         const baseIntent = `intent://${after}#Intent;scheme=twitter;package=com.twitter.android;`;
         intentNoBFU  = baseIntent + 'end';
@@ -102,12 +104,12 @@
         const WVorIframe = isAndroidWebView() || isInIframe();
         if (WVorIframe) intentUrl = intentNoBFU; // без BFU в жёстких средах
 
-        info = { mode:'twitter', WVorIframe, user, intentUrl, schemeUrl, fallback:tWeb, marketUrl, delayMs };
-        runOpenFlow({ schemeUrl, intentUrl, intentNoBFU, fallback:tWeb, marketUrl, delayMs, info, WVorIframe });
+        info = { mode:'twitter', WVorIframe, isHttpScheme, user, intentUrl, schemeUrl, fallback:tWeb, marketUrl, delayMs };
+        runOpenFlow({ schemeUrl, intentUrl, intentNoBFU, fallback:tWeb, marketUrl, delayMs, info, WVorIframe, isHttpScheme });
       }
     }
 
-    function runOpenFlow({ schemeUrl, intentUrl, intentNoBFU, fallback, marketUrl, delayMs, info, WVorIframe }) {
+    function runOpenFlow({ schemeUrl, intentUrl, intentNoBFU, fallback, marketUrl, delayMs, info, WVorIframe, isHttpScheme }) {
       let navigatedAway = false;
       let timer = null;
       const cancel = () => { if (!navigatedAway){ navigatedAway = true; if (timer) clearTimeout(timer); }};
@@ -134,7 +136,9 @@
       // Порядок попыток
       if (WVorIframe) {
         // Жёсткие среды: сначала схема → затем intent без BFU
-        setTimeout(() => { if (!navigatedAway && schemeUrl)  location.href = schemeUrl; }, 0);
+        if (!isHttpScheme) {
+          setTimeout(() => { if (!navigatedAway && schemeUrl)  location.href = schemeUrl; }, 0);
+        }
         setTimeout(() => { if (!navigatedAway && intentUrl)  location.href = intentUrl; }, 120);
       } else {
         // Обычные браузеры: intent (с BFU) → схема
