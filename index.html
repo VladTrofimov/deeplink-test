@@ -12,14 +12,14 @@
   <!--<pre id="info">init…</pre>  -->
 
   <!-- Режим ручного клика (отображается, если автопереход заблокирован) -->
-  <div id="manual" style="display:none; margin-top:16px">
+  <!-- <div id="manual" style="display:none; margin-top:16px">
     <p>Похоже, ваш просмотрщик блокирует авто-переход. Нажмите кнопку:</p>
     <p>
       <a id="btnScheme" class="btn" href="#" target="_top" rel="noopener">Открыть в приложении</a>
       <a id="btnIntent" class="btn" href="#" target="_top" rel="noopener">Открыть через Intent</a>
       <a id="btnMarket" class="btn" href="#" target="_top" rel="noopener">Открыть в Play</a>
     </p>
-  </div>
+  </div> -->
 
   <script>
     // ===== утилиты =====
@@ -158,8 +158,7 @@
         }
       }, delayMs);
 
-      // Если авто-открытие не прошло — покажем кнопки через 2с
-      setTimeout(() => { if (!navigatedAway) showManual(); }, 2000);
+    
     }
 
     document.addEventListener('DOMContentLoaded', tryOpen);
